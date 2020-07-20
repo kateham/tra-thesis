@@ -1,0 +1,56 @@
+---
+title: "baserent_type"
+author: "Kate Ham"
+date: "5/7/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r cars}
+test <- read_csv("C:/Users/katea/OneDrive - Leland Stanford Junior University/SENIOR THESIS/Data Analysis/Alameda - Eviction and TRA Data/baserent_type_r.csv")
+```
+```{r}
+test_tidy <-
+  test %>% 
+  pivot_longer(-`Row Labels`, names_to = "unit_type", values_to = "evictions")
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+test_tidy <-
+  test_tidy %>% 
+  mutate(baserent = fct_relevel(`Row Labels`, "$400 - $599", "$600 - $799", "$800 - $999"))
+
+test_tidy %>% 
+  ggplot(aes(baserent, evictions)) +
+  geom_smooth(aes(group = unit_type, color = unit_type), size = 1, se = FALSE) +
+  geom_vline(xintercept = "$3400 - $3599", linetype = "dashed") +
+  geom_text(aes("$3400 - $3599", 22, label = "Median Rent"), color = "grey50") +
+  scale_color_manual(values = c("red", "purple", "orange", "blue", "black")) +
+  labs(
+    x = "Base Rent",
+    y = "Eviction Notices",
+    color = "Select Unit Types",
+    title = "No-Fault Evictions by Base Rent in Alameda city (2016 - 2019)",
+    caption = "Source: Alameda PRR; Zillow Rent Index"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  )
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.

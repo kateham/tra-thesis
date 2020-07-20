@@ -1,0 +1,85 @@
+---
+title: "CRRI"
+author: "Kate Ham"
+date: "7/17/2020"
+output: html_document
+---
+
+# Preface
+
+Idea for this EDA came from Tenants Together's manual guide for corporate landlord ownership lookup [pdf](https://www.tenantstogether.org/sites/tenantstogether.org/files/Wall_St_Landlord_Participatory_Action_Research_Guide.pdf). In short, the guide says to find a landlord's website and get all the listing addresses. Then, go to a proptech data source like Property Radar to check ownership information.
+
+This EDA tries to speed up this process by scraping all the listing addresses from a landlord site, then using dyplr with pre-downloaded CoreLogic data to quickly get owner information.
+
+Often these listing pages are loaded with JS, so we will use the 'rvest' and 'crrri' packages and open with *Chrome browser*.
+
+Limitations: The CoreLogic data downloaded is from 2019 and is only for the 9-county Bay Area. In addition, this analysis will exclusively look at [Avalon's properties](https://www.avaloncommunities.com/northern-california).
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+## Libraries
+library(tidyverse)
+library(rvest)
+# remotes::install_github('rlesur/crrri')
+library(crrri)
+library(promises)
+
+## Parameters
+url_data <- "https://www.avaloncommunities.com/northern-california" # Accessed 7-17-2020
+css_selector <- "#community-search-results-wrapper > div:nth-child(2) > div.col-sm-12.col-lg-6.order-lg-1.community-search-results-list > div.nearby-communities-list-horizontal-wrapper > ul > li:nth-child(1)"
+
+#community-search-results-wrapper > div:nth-child(2) > div.col-sm-12.col-lg-6.order-lg-1.community-search-results-list > div.nearby-communities-list-horizontal-wrapper > ul > li:nth-child(1) > div.content > div.address
+```
+
+# Code
+
+## Web-Scraping
+
+First we will use ['crrri'](https://github.com/RLesur/crrri), a Chrome Remote Interface in R package that is still in development but allows headless Chrome interaction. 
+
+Again, because the Advent website is in JS, we cannot simply use 'rvest' alone. See this [thread](https://community.rstudio.com/t/webscarping-rvest-output-list-of-0/29625/2) for details.
+
+Since the package iS still in development, be sure to install it properly. See this [thread](https://community.rstudio.com/t/install-packages-unable-to-access-index-for-repository-try-disabling-secure-download-method-for-http/16578) for help.
+
+This function is copied from the crri documentation page to get the webpage's html.
+
+```{r, get html}
+async_dump_DOM <- function(client) {
+  Network <- client$Network
+  Page <- client$Page
+  Runtime <- client$Runtime
+  Network$enable() %...>% { 
+    Page$enable()
+  } %...>% {
+    Network$setCacheDisabled(cacheDisabled = TRUE)
+  } %...>% {
+    Page$navigate(url = url_data)
+  } %...>% {
+    Page$loadEventFired()
+  } %...>% {
+    Runtime$evaluate(
+      expression = 'document.documentElement.outerHTML'
+    )
+  } %...>% (function(result) {
+    html <- result$result$value
+    read_html(html)
+    #cat(html, "\n")
+  }) 
+}
+
+url_html <- perform_with_chrome(async_dump_DOM)
+```
+
+```{r}
+# launch headless Chrome
+chrome <- Chrome$new()
+# Inspect Headless chrome inside Rstudio viewer
+client <- chrome$connect(callback = ~.x$inspect())
+# extract a domain from the protocol to work with
+Page <- client$Page
+# Send the 'Page.navigate' command from the protocol
+Page$navigate(url = url_data)
+```

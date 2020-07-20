@@ -1,0 +1,58 @@
+---
+title: "Corporate Landlords EDA"
+author: "Kate Ham"
+date: "7/17/2020"
+output: github_document
+---
+
+# Preface
+
+Idea for this EDA came from Tenants Together's manual guide for corporate landlord ownership lookup [pdf](https://www.tenantstogether.org/sites/tenantstogether.org/files/Wall_St_Landlord_Participatory_Action_Research_Guide.pdf). In short, the guide says to find a landlord's website and get all the listing addresses. Then, go to a proptech data source like Property Radar to check ownership information.
+
+This EDA tries to speed up this process by scraping all the listing addresses from a landlord site with ['rvest'](https://github.com/tidyverse/rvest), then using dyplr with pre-downloaded CoreLogic data to quickly get owner information.
+
+Limitations: The CoreLogic data downloaded is from 2019 and is only for the 9-county Bay Area. In addition, this analysis will exclusively look at [Avalon's properties](https://www.avaloncommunities.com/northern-california).
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## CSS Selector
+
+Use the [SelectorGadget](https://selectorgadget.com/) Chrome extension to get the CSS selector for the addresses. Save the result as "css_selector".
+
+```{r}
+## Libraries
+library(tidyverse)
+library(rvest)
+
+## Parameters
+url_data <- "https://www.avaloncommunities.com/northern-california" # Accessed 7-17-2020
+css_selector <- ".address"
+```
+
+# Webscraping
+
+Note: If the html elements are in lists, check out this [thread](https://stackoverflow.com/questions/52650604/scrapping-li-elements-with-rvest).
+
+```{r read}
+address_data <- 
+  url_data %>% 
+  read_html() %>% 
+  html_nodes(css = css_selector) %>% 
+  html_text()
+```
+
+Next, save the address data in a tibble to make it easier to manage.
+
+```{r, addresses}
+avalon <- 
+  tibble(
+    owner = "avalon",
+    address = address_data,
+    access_date = Sys.Date()
+  )
+```
+
+# CoreLogic
+

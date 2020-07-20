@@ -1,0 +1,263 @@
+---
+title: "Corporate Landlords EDA - Avalon"
+author: "Kate Ham"
+date: "7/17/2020"
+output: github_document
+---
+
+# Preface
+
+Idea for this EDA came from Tenants Together's manual guide for corporate landlord ownership lookup [pdf](https://www.tenantstogether.org/sites/tenantstogether.org/files/Wall_St_Landlord_Participatory_Action_Research_Guide.pdf). In short, the guide says to find a landlord's website and get all the listing addresses. Then, go to a proptech data source like Property Radar to check ownership information.
+
+## Packages
+
+This EDA tries to speed up this process by scraping all the listing addresses from a landlord site with [`rvest`](https://github.com/tidyverse/rvest), then using dyplr with pre-downloaded CoreLogic data to quickly get owner information.
+
+While using rvest, use the [SelectorGadget](https://selectorgadget.com/) Chrome extension to get the CSS selector for the addresses. Save the result as "css_selector".
+
+We will also use the [`postmastr](https://github.com/slu-openGIS/postmastr) package to parse the addresses. This package is still in development so needs to be downloaded remotely.
+
+**Limitations: The CoreLogic data downloaded is from 2019 and is only for the 9-county Bay Area. In addition, this analysis will exclusively look at [Avalon's properties in Northern California](https://www.avaloncommunities.com/northern-california).**
+
+*Warning*: The `all9counties.rds` file is 3.6 GB.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+## Libraries
+library(tidyverse)
+library(rvest)
+library(lubridate)
+# install.packages("remotes")
+#remotes::install_github("slu-openGIS/postmastr")
+library(postmastr)
+```
+
+```{r}
+## Parameters
+
+### Webscraping
+url_data <- "https://www.avaloncommunities.com/northern-california" # Accessed 7-17-2020
+css_selector <- ".address"
+```
+
+```{r, eval=FALSE}
+### CoreLogic
+corelogic <- read_rds(here::here("data-raw/all9counties.rds"))
+best_vars <-   read_rds(here::here("data/best_vars.rds"))
+file_data_dic <- here::here("data-raw/Bulk_Tax_Current_Layout w parcel level lat long_03102016.xlsx")
+  # Property Indicator filter
+RESIDENTIAL <- c(0:199)
+  # recode function
+recode_county <- function(county_fips) {
+  county_fips %>% 
+    recode(
+      '06001' = "alameda",
+      '06013' = "contra_costa", 
+      '06041' = "marin",
+      '06055' = "napa", 
+      '06075' = "san_francisco",
+      '06081' = "san_mateo",
+      '06085' = "santa_clara",
+      '06095' = "solano",
+      '06097' = "sonoma" 
+    )
+}
+```
+
+# Webscraping
+
+Note: If the html elements are in lists, check out this [thread](https://stackoverflow.com/questions/52650604/scrapping-li-elements-with-rvest).
+
+```{r read}
+address_data <- 
+  url_data %>% 
+  read_html() %>% 
+  html_nodes(css = css_selector) %>% 
+  html_text()
+```
+
+Next, save the address data in a tibble to make it easier to manage.
+
+```{r, addresses}
+avalon <- 
+  tibble(
+    owner = "avalon",
+    address = str_to_upper(address_data),
+    access_date = Sys.Date()
+  )
+avalon
+```
+
+According to the `postmastr` [guide](https://slu-opengis.github.io/postmastr/articles/postmastr.html), We first need to create the appropriate dictionaries for elements of the address.
+
+```{r}
+dict_ca <- 
+  pm_dictionary(
+    type = "state",
+    filter = "CA",
+    case = "upper",
+    locale = "us"
+  )
+
+dict_cities <- 
+  pm_dictionary(
+    type = "city",
+    filter = "CA",
+    case = "upper",
+    locale = "us"
+  )
+
+dict_dir <- 
+  pm_dictionary(
+    type = "directional",
+    case = "upper"
+  )
+
+# I can't figure out how to tidy this...
+dict_mode <- 
+  pm_dictionary(
+    type = "suffix",
+    case = "upper"
+  )
+# get abbreviated street modes
+dict_mode <- 
+  dict_mode %>% 
+  bind_rows(
+    map(
+      1, 
+      ~ dict_mode %>% 
+        mutate(suf.input = str_c(.$suf.input, "."))
+    )
+  )
+
+```
+
+We then parse out each element of the address and clean up the table a bit so it's easier to join with the CoreLogic data. Be sure to modify the function as necessary depending on the elements that are missing from the scraped addresses. There's definitely already some parsing errors that might be able to be fixed upon further examination.
+
+```{r}
+avalon <- 
+  avalon %>% 
+  pm_identify(var = "address") %>% 
+  pm_parse(
+    input = "full",
+    address = "address",
+    output = "full",
+    keep_parsed = "yes",
+    side = "right",
+    keep_ids = TRUE,
+    dir_dict = dict_dir,
+    suffix_dict = dict_mode,
+    city_dict = dict_cities,
+    state_dict = dict_ca,
+    locale = "us"
+  ) %>%
+  transmute(
+    owner,
+    address,
+    access_date,
+    house_num = pm.house,
+    dir = str_to_upper(pm.preDir),
+    street = str_to_upper(pm.street),
+    mode = str_to_upper(pm.streetSuf),
+    city = pm.city,
+    zipcode = pm.zip
+  )
+avalon
+```
+
+# CoreLogic
+
+## Subsetting
+
+The following code chunks clean and create a file of all the residential properties in the 9-county Bay Area with select variables (less than 25% missing values).
+
+NOTE: Parsing failures are for properties without sales transaction recording dates.
+
+```{r subsetting}
+cl_select <-
+  corelogic %>%
+  select(all_of(best_vars)) %>% 
+  filter(LAND_USE %in% RESIDENTIAL) %>% 
+  mutate(RECORDING_DATE = ymd(RECORDING_DATE)) %>% 
+  mutate(county = recode_county(FIPS_CODE))
+```
+
+Feel free to check the `file_data_dic` for more information. The following are all the variables selected:
+
+```{r}
+cl_select %>% names()
+```
+
+These variables will be of most interest in joining with CL data:
+
+```{r}
+cl_select %>% 
+  select(contains("OWNER"), starts_with("SITUS"), starts_with("PARCEL_LEVEL")) %>% 
+  head()
+```
+
+## Finding Owners
+
+By joining the Avalon properties data `avalon` with the CoreLogic data `cl_select` then 
+
+```{r}
+avalon_cl <- 
+  avalon %>% 
+  inner_join(
+    cl_select, 
+    by = 
+      c(
+        "house_num" = "SITUS_HOUSE_NUMBER", 
+        "street" = "SITUS_STREET_NAME",
+        "city" = "SITUS_CITY"
+      )
+  )
+avalon_cl
+```
+
+Many properties have duplicates. This is because the Avalon data is by property building and the CL data is by individual unit. For the purposes of this analysis, we assume that all of a building's units have the same owner. However, I left them all in the tibble to maximize the property information available.
+
+Only properties that matched with the CL data were kept. Ones that did not match were likely due to parsing errors with `postmastr`. We will ignore the unmatched properties, but you can see them from the chunk below.
+
+```{r, eval=FALSE}
+avalon_cl %>% 
+  anti_join(
+    avalon_cl2,
+    by = "FORMATTED_APN"
+  )
+```
+
+The following is a list of all the owner names that Avalon goes by. 
+
+```{r}
+owners <- 
+  avalon_cl %>% 
+  distinct(OWNER1_LAST_NAME) %>% 
+  pull()
+owners
+```
+
+There are `r owners %>% length()` different names.
+
+The following are units owned by Avalon that were not listed on their website.
+
+```{r}
+avalon_unlisted <- 
+  cl_select %>% 
+  filter(OWNER1_LAST_NAME %in% owners) %>% 
+  anti_join(avalon_cl, by = "FORMATTED_APN") %>% 
+  select(contains("SITUS"))
+avalon_unlisted
+```
+
+If we remove units with the same property address, we find that there are `r avalon_unlisted %>% distinct(SITUS_CITY, SITUS_STREET_NAME, SITUS_HOUSE_NUMBER) %>% nrow()`different properties.
+```
+
+
+
+
+
+

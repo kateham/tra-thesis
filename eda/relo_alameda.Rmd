@@ -1,0 +1,66 @@
+---
+title: "relo alameda"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidyverse)
+library(readxl)
+
+# parameters
+
+eviction_notices <- "C:/Users/katea/OneDrive - Leland Stanford Junior University/SENIOR THESIS/Data Analysis/Alameda - Eviction and TRA Data/Alameda - MASTER TN log FY 15-20.xlsx"
+
+```
+
+```{r}
+# read
+sheet <- read_xlsx(eviction_notices, sheet = 4)
+```
+
+```{r}
+#filter
+sheet_filtered <- 
+  sheet %>%
+  filter(Status == "Effective") %>% 
+  mutate(`Relocation Assistance` = as.double(`Relocation Assistance`)) %>% 
+  filter(!is.na(`Relocation Assistance`)) %>% 
+  mutate(
+    Range = 
+      case_when(
+        `Relocation Assistance` < 1000 ~ "Less than 1000",
+        `Relocation Assistance` >=1000 & `Relocation Assistance`<2000 ~ "$1000-$1999",
+        `Relocation Assistance` >=2000 & `Relocation Assistance`<3000 ~ "$2000-$2999",
+        `Relocation Assistance` >=3000 & `Relocation Assistance`<4000 ~ "$3000-$3999",
+        `Relocation Assistance` >=4000 & `Relocation Assistance`<5000 ~ "$4000-$4999",
+        `Relocation Assistance` >=5000 & `Relocation Assistance`<6000 ~ "$5000-$5999",
+        `Relocation Assistance` >=6000 & `Relocation Assistance`<7000 ~ "$6000-$6999",
+        `Relocation Assistance` >=7000 & `Relocation Assistance`<8000 ~ "$7000-$7999",
+        `Relocation Assistance` >=8000 & `Relocation Assistance`<9000 ~ "$8000-$8999",
+        `Relocation Assistance` >=9000 & `Relocation Assistance`<10000 ~ "$9000-$9999",
+        `Relocation Assistance` >=10000 & `Relocation Assistance`<11000 ~ "$10000-$10999",
+        `Relocation Assistance` >=11000 & `Relocation Assistance`<12000 ~ "$11000-$11999",
+        `Relocation Assistance` >=12000 & `Relocation Assistance`<13000 ~ "$12000-$12999",
+        `Relocation Assistance` >=13000 & `Relocation Assistance`<14000 ~ "$13000-$13999",
+        `Relocation Assistance` >=14000 & `Relocation Assistance`<15000 ~ "$14000-$14999",
+        `Relocation Assistance` >=15000 & `Relocation Assistance`<16000 ~ "$15000-$15999",
+        `Relocation Assistance` >=16000 & `Relocation Assistance`<17000 ~ "$16000-$16999"
+      )
+  ) %>% 
+  arrange(`Relocation Assistance`) %>% 
+  mutate(Range = fct_reorder(Range, `Relocation Assistance`))
+```
+
+```{r}
+#graphing
+sheet_filtered %>% 
+  ggplot(aes(x = Range)) +
+  geom_bar() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(title = "Relocation Assistance for Effective Evictions, 2016-2019 (Alameda city)")
+```
+
