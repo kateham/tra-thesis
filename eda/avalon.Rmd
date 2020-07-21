@@ -2,30 +2,32 @@
 title: "Corporate Landlords EDA - Avalon"
 author: "Kate Ham"
 date: "7/17/2020"
-output: github_document
+output: 
+  github_document:
+    toc: true
 ---
 
-# Preface
+## Preface
 
 Idea for this EDA came from Tenants Together's manual guide for corporate landlord ownership lookup [pdf](https://www.tenantstogether.org/sites/tenantstogether.org/files/Wall_St_Landlord_Participatory_Action_Research_Guide.pdf). In short, the guide says to find a landlord's website and get all the listing addresses. Then, go to a proptech data source like Property Radar to check ownership information.
 
-## Packages
+### Packages
 
-This EDA tries to speed up this process by scraping all the listing addresses from a landlord site with [`rvest`](https://github.com/tidyverse/rvest), then using dyplr with pre-downloaded CoreLogic data to quickly get owner information.
+This EDA tries to speed up this process by scraping all the listing addresses from a landlord site with [rvest](https://github.com/tidyverse/rvest), then using dyplr with pre-downloaded CoreLogic data to quickly get owner information.
 
-While using rvest, use the [SelectorGadget](https://selectorgadget.com/) Chrome extension to get the CSS selector for the addresses. Save the result as "css_selector".
+While using rvest, use the [SelectorGadget](https://selectorgadget.com/) Chrome extension to get the CSS selector for the addresses. Save the result as `css_selector`.
 
-We will also use the [`postmastr](https://github.com/slu-openGIS/postmastr) package to parse the addresses. This package is still in development so needs to be downloaded remotely.
+We will also use the [postmastr](https://github.com/slu-openGIS/postmastr) package to parse the addresses. This package is still in development so needs to be downloaded remotely.
 
-**Limitations: The CoreLogic data downloaded is from 2019 and is only for the 9-county Bay Area. In addition, this analysis will exclusively look at [Avalon's properties in Northern California](https://www.avaloncommunities.com/northern-california).**
+*Limitations: The CoreLogic data downloaded is from 2019 and is only for the 9-county Bay Area. In addition, this analysis will exclusively look at [Avalon's properties in Northern California](https://www.avaloncommunities.com/northern-california).*
 
-*Warning*: The `all9counties.rds` file is 3.6 GB.
+*Warning: The `corelogic` file, which contains the CoreLogic data for the 9 counties in the Bay Area, is 3.6 GB.*
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-```{r}
+```{r libraries, message=FALSE}
 ## Libraries
 library(tidyverse)
 library(rvest)
@@ -35,7 +37,7 @@ library(lubridate)
 library(postmastr)
 ```
 
-```{r}
+```{r parameters1}
 ## Parameters
 
 ### Webscraping
@@ -43,7 +45,7 @@ url_data <- "https://www.avaloncommunities.com/northern-california" # Accessed 7
 css_selector <- ".address"
 ```
 
-```{r, eval=FALSE}
+```{r parameters2}
 ### CoreLogic
 corelogic <- read_rds(here::here("data-raw/all9counties.rds"))
 best_vars <-   read_rds(here::here("data/best_vars.rds"))
@@ -67,7 +69,11 @@ recode_county <- function(county_fips) {
 }
 ```
 
-# Webscraping
+## Avalon
+
+### Webscraping with Rvest
+
+First, scrape the data from the Avalon website using rvest and the proper CSS selector. Then, save the read in as HTML text.
 
 Note: If the html elements are in lists, check out this [thread](https://stackoverflow.com/questions/52650604/scrapping-li-elements-with-rvest).
 
@@ -81,7 +87,7 @@ address_data <-
 
 Next, save the address data in a tibble to make it easier to manage.
 
-```{r, addresses}
+```{r addresses}
 avalon <- 
   tibble(
     owner = "avalon",
@@ -91,9 +97,11 @@ avalon <-
 avalon
 ```
 
-According to the `postmastr` [guide](https://slu-opengis.github.io/postmastr/articles/postmastr.html), We first need to create the appropriate dictionaries for elements of the address.
+### Parsing Addresses with Postmastr
 
-```{r}
+According to the postmastr [guide](https://slu-opengis.github.io/postmastr/articles/postmastr.html), We first need to create the appropriate dictionaries for elements of the address.
+
+```{r dicts}
 dict_ca <- 
   pm_dictionary(
     type = "state",
@@ -137,7 +145,7 @@ dict_mode <-
 
 We then parse out each element of the address and clean up the table a bit so it's easier to join with the CoreLogic data. Be sure to modify the function as necessary depending on the elements that are missing from the scraped addresses. There's definitely already some parsing errors that might be able to be fixed upon further examination.
 
-```{r}
+```{r parse}
 avalon <- 
   avalon %>% 
   pm_identify(var = "address") %>% 
@@ -168,15 +176,15 @@ avalon <-
 avalon
 ```
 
-# CoreLogic
+## CoreLogic
 
-## Subsetting
+### Subsetting
 
 The following code chunks clean and create a file of all the residential properties in the 9-county Bay Area with select variables (less than 25% missing values).
 
 NOTE: Parsing failures are for properties without sales transaction recording dates.
 
-```{r subsetting}
+```{r subset}
 cl_select <-
   corelogic %>%
   select(all_of(best_vars)) %>% 
@@ -185,25 +193,19 @@ cl_select <-
   mutate(county = recode_county(FIPS_CODE))
 ```
 
-Feel free to check the `file_data_dic` for more information. The following are all the variables selected:
+Feel free to check the `file_data_dic` for more information. There are `r length(names(cl_select))` different variables, though these variables will be of most interest in joining with CL data:
 
-```{r}
-cl_select %>% names()
-```
-
-These variables will be of most interest in joining with CL data:
-
-```{r}
+```{r select names}
 cl_select %>% 
   select(contains("OWNER"), starts_with("SITUS"), starts_with("PARCEL_LEVEL")) %>% 
   head()
 ```
 
-## Finding Owners
+### Finding Owners
 
-By joining the Avalon properties data `avalon` with the CoreLogic data `cl_select` then 
+Join the Avalon properties data `avalon` with the CoreLogic data `cl_select` to get more information about the properties. 
 
-```{r}
+```{r join}
 avalon_cl <- 
   avalon %>% 
   inner_join(
@@ -215,24 +217,31 @@ avalon_cl <-
         "city" = "SITUS_CITY"
       )
   )
-avalon_cl
+head(avalon_cl)
 ```
 
-Many properties have duplicates. This is because the Avalon data is by property building and the CL data is by individual unit. For the purposes of this analysis, we assume that all of a building's units have the same owner. However, I left them all in the tibble to maximize the property information available.
+There are `r length(avalon_cl)` Avalon properties in the CoreLogic dataset.
 
-Only properties that matched with the CL data were kept. Ones that did not match were likely due to parsing errors with `postmastr`. We will ignore the unmatched properties, but you can see them from the chunk below.
+Many properties have seemingly duplicate data. This is because the Avalon data is by property building and the CL data is by individual unit. For the purposes of this analysis, we assume that all of a building's units have the same owner. However, I left them all in the tibble to maximize the property information available.
 
-```{r, eval=FALSE}
-avalon_cl %>% 
+Only Avalon properties that matched with the CL data were kept. Ones that did not match were likely due to parsing errors with postmastr. We will ignore the unmatched properties, but you can see them from the chunk below.
+
+```{r unjoined}
+avalon %>% 
   anti_join(
-    avalon_cl2,
-    by = "FORMATTED_APN"
+    cl_select, 
+    by = 
+      c(
+        "house_num" = "SITUS_HOUSE_NUMBER", 
+        "street" = "SITUS_STREET_NAME",
+        "city" = "SITUS_CITY"
+      )
   )
 ```
 
 The following is a list of all the owner names that Avalon goes by. 
 
-```{r}
+```{r owners}
 owners <- 
   avalon_cl %>% 
   distinct(OWNER1_LAST_NAME) %>% 
@@ -240,11 +249,11 @@ owners <-
 owners
 ```
 
-There are `r owners %>% length()` different names.
+There are `r length(owners)` different names.
 
 The following are units owned by Avalon that were not listed on their website.
 
-```{r}
+```{r unlisted owners}
 avalon_unlisted <- 
   cl_select %>% 
   filter(OWNER1_LAST_NAME %in% owners) %>% 
@@ -253,8 +262,11 @@ avalon_unlisted <-
 avalon_unlisted
 ```
 
-If we remove units with the same property address, we find that there are `r avalon_unlisted %>% distinct(SITUS_CITY, SITUS_STREET_NAME, SITUS_HOUSE_NUMBER) %>% nrow()`different properties.
-```
+There are `r nrow(avalon_unlisted)` units. If we remove units with the same property address, we find that there are `r avalon_unlisted %>% distinct(SITUS_CITY, SITUS_STREET_NAME, SITUS_HOUSE_NUMBER) %>% nrow()`different properties.
+
+## Conclusion
+
+This basic process of scraping and joining with CoreLogic data is a method of speeding up the manual process as detailed in the original Tenants Together guide. Certainly the methods would need to be tweaked for individual websites. In further EDAs, I will need to explore using the `RSelenium` package, as many residential property company websites use cookies.
 
 
 
