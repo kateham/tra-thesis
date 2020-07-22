@@ -1,0 +1,139 @@
+---
+title: "CoreLogic EDA"
+author: "Kate Ham"
+date: "`r Sys.Date()`"
+output: 
+  github_document:
+    toc: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r message=FALSE, warning=FALSE}
+# Libraries
+library(tidyverse)
+library(lubridate)
+library(sf)
+
+# Parameters
+corelogic <- read_rds(here::here("c01-own/data-raw/all9counties.rds"))
+best_vars <-   read_rds(here::here("c01-own/data/best_vars.rds"))
+  # Property Indicator filter
+RESIDENTIAL <- c(0:199)
+  # recode function
+recode_county <- function(county_fips) {
+  county_fips %>% 
+    recode(
+      '06001' = "alameda",
+      '06013' = "contra_costa", 
+      '06041' = "marin",
+      '06055' = "napa", 
+      '06075' = "san_francisco",
+      '06081' = "san_mateo",
+      '06085' = "santa_clara",
+      '06095' = "solano",
+      '06097' = "sonoma" 
+    )
+}
+#===============================================================================
+
+# Code
+```
+
+## Filter for residential properties and best vars
+```{r}
+cl_select <-
+  corelogic %>%
+  select(best_vars) %>% 
+  cl_select %>% filter(LAND_USE %in% RESIDENTIAL)
+
+rm(corelogic)
+```
+
+### Missing Values in Sales Variables
+```{r}
+cl_select %>%
+  summarize_at(vars(DOCUMENT_TYPE, RECORDING_DATE, SALE_CODE, SALE_PRICE, TRANSACTION_TYPE), ~ sum(is.na(.)))
+```
+GD = Grant Deed
+NA = missing
+DD = Deed
+CR = Corporate Deed
+IV = Individual Grant Deed
+QC = Quit Claim Deed
+WD = Warranty Deed
+AF = Affidavit (of death)
+IT = Interspousal Deed Transfer
+JT = Joint Tenancy Deed
+
+RECORDING_DATE missing = 234091
+
+Remember to investigate YEAR_BUILT
+
+```{r}
+cl_select %>% 
+  filter(is.na(TRANSACTION_TYPE), !is.na(DOCUMENT_TYPE))
+```
+Use TRANSACTION_TYPE, though there are some observations with information from DOCUMENT_TYPE, therefore with property value information.
+
+```{r}
+cl_select %>% 
+  count(TRANSACTION_TYPE, sort = TRUE)
+```
+Most transactions were resale (1) or new construction (3).
+
+#### Municipal/Nonprofit Properties?
+```{r}
+cl_select %>% 
+  filter(!is.na(TRANSACTION_TYPE)) %>% 
+  filter(str_detect(OWNER1_LAST_NAME, "AFFORDABLE|CITY OF|COUNTY"))
+```
+
+
+```{r}
+cl_select <- 
+  cl_select %>% 
+  mutate(RECORDING_DATE = ymd(RECORDING_DATE)) %>% 
+  filter(RECORDING_DATE >= ymd(20000101))
+```
+
+can also look at whole timeline to see the post-2008 spike in sales
+```{r}
+cl_select %>% 
+  filter(RECORDING_DATE >= ymd(20100101)) %>% 
+  mutate(county = recode_county(FIPS_CODE)) %>% 
+  ggplot(aes(RECORDING_DATE, color = county)) +
+  geom_freqpoly(binwidth = 100)
+```
+Looks like San Mateo, Alameda, and Contra Costa have the most sales transactions by far. Napa and Marin are the lowest.
+
+### Which neighborhoods in San Mateo have highest sales count?
+```{r}
+cl_select_smc <- 
+  cl_select %>% 
+  mutate(county = recode_county(FIPS_CODE)) %>%
+  filter(county == "san_mateo", RECORDING_DATE >= ymd(20100101))
+
+cl_select_smc %>%
+  mutate(
+    lat = PARCEL_LEVEL_LATITUDE__2_6_,
+    long = PARCEL_LEVEL_LONGITUDE__3_6_
+  ) %>% 
+  drop_na(lat, long) %>% 
+  st_as_sf(coords = c("long", "lat"), crs = 4326, agr = "constant") %>% 
+  ggplot() +
+  geom_sf(size = 1, shape = 23, fill = "darkred")
+```
+
+
+```{r}
+```
+
+
+```{r}
+```
+
+
+```{r}

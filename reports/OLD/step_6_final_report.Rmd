@@ -1,0 +1,14 @@
+---
+title: "Final report"
+author: "Your Name"
+date: "`r Sys.Date()`"
+output: 
+  github_document:
+    toc: true
+---
+
+```{r include = FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Section

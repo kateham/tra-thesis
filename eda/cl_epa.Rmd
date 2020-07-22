@@ -1,0 +1,293 @@
+---
+title: "EPA Property EDA with CoreLogic"
+author: "Kate Ham"
+date: "`r Sys.Date()`"
+output: 
+  github_document:
+    toc: true
+---
+Prepared for: Karen Camacho
+
+# Description
+The following is a draft exploratory data analysis (EDA) report for the property stock in the City of East Palo Alto using CoreLogic taxroll parcel data from 2019 in order to estimate which properties would be best suited for a CLT. Note the most recent data is 06-06-2019, and only residential properties are included.
+
+NOTE TO SELF: Lookup prior research on NOAH.
+
+# Setup
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r message=FALSE, warning=FALSE}
+# Libraries
+library(tidyverse)
+library(lubridate)
+library(sf)
+library(leaflet)
+
+# Parameters
+corelogic <- read_rds(here::here("c01-own/data-raw/all9counties.rds"))
+best_vars <-   read_rds(here::here("c01-own/data/best_vars.rds"))
+boundaries_city_epa <- read_rds(here::here("c01-own/data/boundaries_city/boundaries_city_east_palo_alto.rds"))
+file_data_dic <- here::here("c01-own/data-raw/Bulk_Tax_Current_Layout w parcel level lat long_03102016.xlsx")
+
+  # Property Indicator filter
+RESIDENTIAL <- c(0:199)
+  # recode function
+recode_county <- function(county_fips) {
+  county_fips %>% 
+    recode(
+      '06001' = "alameda",
+      '06013' = "contra_costa", 
+      '06041' = "marin",
+      '06055' = "napa", 
+      '06075' = "san_francisco",
+      '06081' = "san_mateo",
+      '06085' = "santa_clara",
+      '06095' = "solano",
+      '06097' = "sonoma" 
+    )
+}
+#===============================================================================
+
+luse_codes <- 
+  file_data_dic %>% 
+  readxl::read_excel(sheet = "LUSE") %>% 
+  transmute(
+    luse_code = `CdVal`,
+    luse_desc = `CdDesc`
+  )
+```
+
+The following code chunks clean and create a file of all the residential properties in EPA with select variables (less than 25% missing values).
+
+```{r cleaning}
+cl_select <-
+  corelogic %>%
+  select(best_vars, contains("MORTGAGE")) %>% 
+  filter(LAND_USE %in% RESIDENTIAL) %>% 
+  mutate(RECORDING_DATE = ymd(RECORDING_DATE)) %>% 
+  mutate(county = recode_county(FIPS_CODE))
+```
+NOTE: Parsing failures are for properties without sales transaction recording dates.
+
+```{r filter for EPA, results="hide"}
+cl_epa <- 
+  cl_select %>% 
+  filter(county == "san_mateo") %>% 
+  mutate(
+    lat = PARCEL_LEVEL_LATITUDE__2_6_,
+    long = PARCEL_LEVEL_LONGITUDE__3_6_
+  ) %>% 
+  drop_na(lat, long) %>% 
+  st_as_sf(coords = c("long", "lat"), crs = 4326, agr = "constant") %>% 
+  st_transform(st_crs(boundaries_city_epa)) %>% 
+  st_filter(boundaries_city_epa, .predicate = st_within) %>% 
+  left_join(luse_codes, by = c("LAND_USE" = "luse_code"))
+```
+NOTE TO SELF: Double check if this is the number of residential properties in EPA with the census!
+
+```{r save EPA, include = FALSE}
+cl_epa %>% 
+  write_rds(here::here("c01-own/data/cl_epa.rds"))
+```
+
+```{r quick map}
+cl_epa %>% 
+  ggplot() +
+  geom_sf(data = boundaries_city_epa, aes(color = "EPA")) +
+  geom_sf(size = 1, shape = 23, fill = "darkred") +
+  labs(
+    colour = "Legend",
+    title = "CoreLogic Property Universe for EPA"
+  )
+```
+
+# Property Stock EDA
+
+## How old are EPA properties?
+```{r year built}
+cl_epa %>%
+  ggplot() +
+  geom_histogram(aes(YEAR_BUILT), binwidth = 10) +
+  scale_x_continuous(breaks = scales::breaks_width(10), minor_breaks = NULL) +
+  labs(
+    title = "Most EPA properties were built in the 1950s."
+  )
+```
+NOTE TO SELF: Ask Karen why this is? What's with the slight bump in the 2000s?
+
+## Current sales info
+```{r sales}
+cl_epa %>% 
+  ggplot() +
+  geom_histogram(aes(RECORDING_DATE), binwidth = 10) +
+  scale_x_date(breaks = seq(ymd(19300101), ymd(20200101), by = "5 years"), date_labels = "%Y", minor_breaks = "1 year") +
+  labs(
+    title = "Outliers: Two big years for sales (2000 and 2016)"
+  )
+```
+Next let's examine the two outliers:
+
+#### Woodland Park - outlier
+```{r woodland park}
+cl_epa %>% 
+  filter(year(RECORDING_DATE) == 2016, OWNER1_LAST_NAME == "WOODLAND PARK PROPERTY OWNER LLC") %>% 
+  select(RECORDING_DATE, OWNER1_LAST_NAME, DOCUMENT_TYPE, SITUS_HOUSE_NUMBER, SITUS_STREET_NAME, YEAR_BUILT, SALE_PRICE, SELLER_NAME) %>% 
+  knitr::kable()
+```
+
+The Woodland Park complex was sold on 02-23-2016 and split up into multiple LPs. There are 101 parcels.
+
+### 2000 outlier?
+```{r finley}
+cl_epa %>% 
+  filter(year(RECORDING_DATE) == 2000, str_detect(OWNER1_LAST_NAME, "FINLEY")) %>% 
+  select(RECORDING_DATE, OWNER1_LAST_NAME, DOCUMENT_TYPE, SITUS_HOUSE_NUMBER, SITUS_STREET_NAME, YEAR_BUILT, SALE_PRICE, SELLER_NAME) %>% 
+  knitr::kable()
+```
+
+Several homes owned by (Jay M) Finley Trust were sold to the McGarr 1992 Trust on 04-07-2000.
+
+### Recording dates without outliers
+NOTE: probably should compare this with data from other SMC(?) cities. Gotta get their boundaries and spatial filter.
+```{r sales w/o outliers}
+cl_epa %>% 
+  filter(OWNER1_LAST_NAME != "WOODLAND PARK PROPERTY OWNER LLC") %>% 
+  ggplot(aes(RECORDING_DATE)) +
+  geom_histogram(binwidth = 700) +
+  scale_x_date(breaks = seq(ymd(19300101), ymd(20200101), by = "5 years"), date_labels = "%Y", minor_breaks = "1 year") +
+  labs(
+    title = "EPA sales growing exponentially over time"
+  )
+```
+
+### Spatial distribution of sales since 2010
+NOTE: I can also display this map as a choropleth by census tract if you'd like.
+NOTE: I can also change it so that it's before 2010 as well. Or adjust dates generally.
+```{r sales spatial}
+cl_epa %>% 
+  filter(RECORDING_DATE >= ymd(20100101)) %>% 
+  ggplot() +
+  geom_sf()
+```
+
+There doesn't seem to be any spatial concentration.
+
+```{r sales spatial leaflet, eval=FALSE, echo=FALSE}
+cl_epa %>%
+  filter(RECORDING_DATE >= ymd(20100101)) %>% 
+  leaflet() %>%
+  addProviderTiles(providers$CartoDB.Positron) %>% 
+  addMarkers(clusterOptions = markerClusterOptions(), clusterId = "sales_cluster") %>% 
+  addEasyButton(
+    easyButton(
+      states = 
+        list(
+          easyButtonState(
+            stateName = "unfrozen-markers",
+            icon = "ion-toggle", 
+            title = "Freeze Clusters",
+            onClick = 
+              JS("
+                         function(btn, map) {
+                         var clusterManager = 
+                         map.layerManager.getLayer('cluster', 'sales_cluster');
+                         clusterManager.freezeAtZoom();
+                         btn.state('frozen-markers');
+                         }
+              ")
+          ),
+          easyButtonState(
+            stateName = "frozen-markers",
+            icon = "ion-toggle-filled",
+            title = "UnFreeze Clusters",
+            onClick = 
+              JS("
+                         function(btn, map) {
+                         var clusterManager = 
+                         map.layerManager.getLayer('cluster', 'sales_cluster');
+                         clusterManager.unfreeze();
+                         btn.state('unfrozen-markers');
+                         }
+              ") 
+          )
+        )
+    )
+  )
+```
+
+### Sales by Type of Home
+```{r}
+cl_epa %>%
+  count(year = year(RECORDING_DATE), luse_desc) %>%
+  group_by(year) %>%
+  mutate(
+    prop = n / sum(n),
+    luse_desc = case_when(
+      luse_desc %in% c("MULTI FAMILY DWELLING", "SFR", "CONDOMINIUM") ~ luse_desc,
+      !luse_desc %in% c("MULTI FAMILY DWELLING", "SFR", "CONDOMINIUM") ~ "Other",
+      TRUE ~ NA_character_
+      )
+  ) %>%
+  filter(year >= 2000) %>%
+  ggplot() +
+  geom_line(aes(year, prop, color = luse_desc)) + # can also use `n`
+  labs(
+    title = "Single-Family Home sales continue to dominate the market"
+  )
+```
+
+### Parcel Value
+
+```{r}
+# average value of parcel (land + improvement)
+median_val <- 
+  cl_epa %>% 
+  summarise(median = median(TOTAL_VALUE_CALCULATED, na.rm = TRUE)) %>% 
+  pull(median)
+
+cl_epa %>% 
+  filter(TOTAL_VALUE_CALCULATED < 1e6) %>% 
+  ggplot() +
+  geom_histogram(aes(TOTAL_VALUE_CALCULATED)) +
+  geom_vline(xintercept = median_val, color = "red") +
+  scale_x_continuous(
+    breaks = scales::breaks_width(100000),
+    labels = scales::label_dollar(accuracy = 2, scale = 1/1000, suffix = "k")
+  ) +
+  labs(
+    title = "Most homes are worth less than $1 mil.",
+    subtitle = "Many are below $100k."
+  )
+```
+
+## Selecting Parcels
+
+Factors that may make homes more suitable for CLTs include: 
+* mortgage delinquency or liens/arrears
+* foreclosure
+* vacant
+* many complaints
+* old properties
+* owner lives in EPA? (check mailing address)
+
+NOTE TO SELF: Devise a scoring system
+NOTE TO SELF: using land value vs improvement value vs total value??
+
+```{r}
+# values should be adjusted as see fit
+# seemingly no spatial cluster
+cl_epa %>%
+  # filter(str_detect(OWNER1_LAST_NAME, " "), !str_detect(OWNER1_LAST_NAME, "INC|LLC|ASSOC|TRUST")) %>% 
+  filter(
+    RECORDING_DATE <= ymd(19950101), 
+    # YEAR_BUILT <= 1970, 
+    # TOTAL_VALUE_CALCULATED < median_val,
+    !is.na(MORTGAGE_LOAN_TYPE_CODE) | !is.na(`_2nd_MORTGAGE_LOAN_TYPE_CODE`) # filters out a lot, since 80% not listed with mortgage
+  ) %>% 
+  knitr::kable()
+
+# cl_epa %>%
+#   count(MORTGAGE_LOAN_TYPE_CODE, sort = TRUE)
+```

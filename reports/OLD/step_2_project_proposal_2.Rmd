@@ -1,0 +1,28 @@
+---
+title: "Project proposal 2"
+author: "Kate Ham"
+date: "`r Sys.Date()`"
+output: 
+  github_document:
+    toc: true
+---
+
+```{r include = FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidyverse)
+library(dplyr)
+RDSFILE <- "Z:/.ir.stanford.edu/users/k/h/kham101/Documents/dcl-c01-kham101/corelogic_tax_bayarea.rds"
+```
+
+```{r}
+corelogic <- read_rds(RDSFILE)
+
+corelogic %>% 
+  summary() %>% 
+
+```
+
+## Section

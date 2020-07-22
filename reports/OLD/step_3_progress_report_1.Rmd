@@ -1,0 +1,129 @@
+---
+title: "Progress report 1"
+author: "Kate Ham"
+date: "`r Sys.Date()`"
+output: 
+  github_document:
+    toc: true
+---
+
+```{r include = FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Section
+```{r}
+# Libraries
+library(tidyverse)
+library(tigris)
+
+# Parameters
+acs_rwc <- "/Users/katea/GitHub/dcl-2020-01/kate/c01-own/data/acs_rwc.rds"
+corelogic_RWC <- "/Users/katea/GitHub/dcl-2020-01/kate/c01-own/data/corelogic_RWC.rds"
+```
+
+```{r}
+# Redwood City Census Block Group FIPS Codes (manually created)
+RWC_CBG <- 
+  c('060816100003',
+    '060816100002',
+    '060816100001',
+    '060816099001',
+    '060816102021',
+    '060816102014',
+    '060816103021',
+    '060816102011',
+    '060816101001',
+    '060816104002',
+    '060816102032',
+    '060816109003',
+    '060816109001',
+    '060816109002',
+    '060816108001',
+    '060816109004',
+    '060816108002',
+    '060816110002',
+    '060816110001',
+    '060816102031',
+    '060816107002',
+    '060816099002',
+    '060816113004',
+    '060816110004',
+    '060816110003',
+    '060816111002',
+    '060816112001',
+    '060816111001',
+    '060816098004',
+    '060816098003',
+    '060816098001',
+    '060816098002',
+    '060816111003',
+    '060816104001',
+    '060816102013',
+    '060816105001',
+    '060816102012',
+    '060816107001',
+    '060816103031',
+    '060816103032',
+    '060816103034',
+    '060816103033',
+    '060816103041',
+    '060816103042',
+    '060816103043'
+  )
+
+# Redwood City Census Tract FIPS Codes (manually created)
+RWC_CT <- # use regex to get any block group within tract
+  c('06081610302.',
+    '06081610304.',
+    '06081610303.',
+    '06081610201.',
+    '06081610400.',
+    '06081610202.',
+    '06081610100.',
+    '06081611200.',
+    '06081611100.',
+    '06081609800.',
+    '06081611000.',
+    '06081611300.',
+    '06081610700.',
+    '06081610800.',
+    '06081610203.',
+    '06081610900.',
+    '06081610000.',
+    '06081609900.'
+  )
+```
+
+
+```{r}
+# Read in data
+acs_rwc <- read_rds(acs_rwc)
+corelogic_RWC <- read_rds(corelogic_RWC)
+```
+
+```{r}
+# Join tibbles
+acs_corelogic_rwc <- 
+  corelogic_RWC %>% 
+  # 
+```
+
+```{r}
+# trying to get block group boundaries with tigris
+smc_blockgroups <- 
+  tigris::block_groups(
+  state = "CA",
+  county = "081",
+  year = 2018
+)
+
+# what is an S4 object and why doesn't %>% work with it?
+
+rwc_blockgroups <- 
+  smc_blockgroups %>% 
+  filter(
+    GEOID %in% c(RWC_CBG, RWC_CT)
+  )
+```
+

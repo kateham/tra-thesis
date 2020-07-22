@@ -1,0 +1,109 @@
+---
+title: "costa-hawkins_exempt"
+author: "Kate Ham"
+date: "`r Sys.Date()`"
+output: 
+  github_document:
+    toc: true
+---
+# NOTE: make a function to input whole bay area
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r message=FALSE, warning=FALSE}
+# Libraries
+library(tidyverse)
+library(sf)
+
+# Parameters
+cl_alameda <- read_rds("C:/Users/katea/GitHub/dcl-2020-01/kate/c01-own/data/cl_alameda.rds")
+cl_contracosta <- read_rds("C:/Users/katea/GitHub/dcl-2020-01/kate/c01-own/data/cl_contracosta.rds")
+
+boundaries_cbg_contra_costa <- read_rds("C:/Users/katea/GitHub/dcl-2020-01/kate/c01-own/data/boundaries_cbg_contra_costa.rds")
+boundaries_cbg_alameda <- read_rds("C:/Users/katea/GitHub/dcl-2020-01/kate/c01-own/data/boundaries_cbg_alameda.rds")
+boundaries_city_oakland <- read_rds("C:/Users/katea/GitHub/dcl-2020-01/kate/c01-own/data/boundaries_city_oakland.rds")
+file_data_dic <- here::here("c01-own/data-raw/Bulk_Tax_Current_Layout w parcel level lat long_03102016.xlsx")
+
+bayarea_water_shp <- st_read("C:/Users/katea/GitHub/dcl-2020-01/kate/c01-own/data-raw/stanford-qh320kj0191-shapefile/qh320kj0191.shp")
+
+RESIDENTIAL <- c(0:199)
+
+#===============================================================================
+
+luse_codes <- 
+  file_data_dic %>% 
+  readxl::read_excel(sheet = "LUSE") %>% 
+  transmute(
+    luse_code = `CdVal`,
+    luse_desc = `CdDesc`
+  )
+```
+
+## Section 1
+
+```{r}
+cl_alameda <- 
+  cl_alameda %>% 
+  left_join(luse_codes, by = c("land_use" = "luse_code")) %>% 
+  filter(land_use %in% RESIDENTIAL) %>%  
+  mutate(
+    lat = parcel_level_latitude__2_6_,
+    long = parcel_level_longitude__3_6_
+  ) %>% 
+  drop_na(lat, long) %>% 
+  st_as_sf(coords = c("long", "lat"), crs = 4326, agr = "constant") %>% 
+  st_transform(st_crs(boundaries_cbg_alameda))
+```
+
+### Subsection
+Costa-Hawkins units exempt from rent control laws in California generally include: (1) SFR, (2) condos, and (3) units built after 2/1/1995.
+```{r}
+# what about NAs?
+# what about effective year built?
+
+cl_alameda_exempt <- 
+  cl_alameda %>% 
+  filter(land_use %in% c(163, 112, 113) | year_built >= 1995)
+```
+
+## Section 2 - Spatial
+```{r}
+alameda_ch <- 
+  boundaries_cbg_alameda %>% 
+  mutate(
+    total = lengths(st_intersects(boundaries_cbg_alameda, cl_alameda)),
+    exempt = lengths(st_intersects(boundaries_cbg_alameda, cl_alameda_exempt)),
+    prop = exempt / total
+  )
+
+```
+
+# EDA for the prop of exempt
+```{r}
+sum(alameda_ch$exempt) / sum(alameda_ch$total)
+```
+
+```{r}
+alameda_ch %>% 
+  ggplot(aes(prop)) +
+  geom_histogram()
+```
+
+
+```{r}
+alameda_ch %>% 
+  #mutate(prop = pmin(prop, 0.15)) %>% 
+  ggplot() +
+  geom_sf(aes(fill = prop)) +
+  geom_sf(data = bayarea_water_shp, fill = "aliceblue") +
+  geom_sf(data = boundaries_city_oakland, fill = NA, color = "red") +
+  coord_sf(
+    xlim = c(-122.4, -122.2),
+    ylim = c(37.73, 37.9)
+  ) +
+  scale_fill_viridis_c(direction = -1)
+```
+
+

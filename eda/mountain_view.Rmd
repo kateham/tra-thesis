@@ -1,0 +1,241 @@
+---
+title: "Mountain View"
+author: "Kate Ham"
+date: "`r Sys.Date()`"
+output: 
+  github_document:
+    toc: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r message=FALSE, warning=FALSE}
+# Libraries
+library(tidyverse)
+library(readxl)
+library(sf)
+library(leaflet)
+library(leaflet.extras)
+
+# Parameters
+  # ACS data
+file_acs <- here::here("c01-own/data/acs/acs_mountain_view.rds")
+
+vars_units <- 
+  vars(
+    B25127_048, 	
+    B25127_049, 
+    B25127_050, 	
+    B25127_051, 	
+    B25127_055, 
+    B25127_056, 	
+    B25127_057, 	
+    B25127_058, 
+    B25127_062, 
+    B25127_063, 	
+    B25127_064, 	
+    B25127_065, 	
+    B25127_069,    
+    B25127_070, 	
+    B25127_071, 	
+    B25127_072, 	
+    B25127_076, 
+    B25127_077, 	
+    B25127_078, 	
+    B25127_079, 
+    B25127_083, 	
+    B25127_084, 	
+    B25127_085, 
+    B25127_086	
+  )
+
+vars_ami <- 
+  vars(
+    B25118_015,
+    B25118_016,
+    B25118_017,
+    B25118_018,
+    B25118_019,
+    B25118_020,
+    B25118_021,
+    B25118_022,
+    B25118_023
+  )
+#===============================================================================
+
+# Code
+```
+
+## Section 1
+```{r}
+acs_mv <- 
+  file_acs %>%
+  read_rds() %>% 
+  transmute(
+    GEOID,
+    total_hh = B25118_014,
+    eligible_ami =
+      pmap_dbl(
+        select_at(st_drop_geometry(.), vars_ami),
+        ~ sum(c(...))),
+    eligible_ami_prop =
+      eligible_ami / total_hh,
+    eligible_units =
+      pmap_dbl(
+        select_at(st_drop_geometry(.), vars_units),
+        ~ sum(c(...))),
+    eligible_units_prop =
+      eligible_units / total_hh,
+    eligible_prop_avg =
+      eligible_units_prop * eligible_ami_prop,
+    eligible_prop_max =
+      pmin(eligible_ami_prop, eligible_units_prop),
+    eligible_prop_min =
+      (eligible_ami_prop + eligible_units_prop - 1) %>% pmax(0)
+  )
+
+```
+
+## EDA on eligibility range
+```{r}
+acs_mv %>% 
+  mutate(GEOID = fct_reorder(GEOID, -eligible_prop_avg)) %>% 
+  ggplot(aes(GEOID)) +
+  geom_errorbar(aes(ymin = eligible_prop_min, ymax = eligible_prop_max)) +
+  geom_point(aes(y = eligible_prop_avg), color = "red") +
+  theme(
+    axis.text.x = element_blank()
+  )
+
+acs_mv %>% 
+  mutate(GEOID = fct_reorder(GEOID, -eligible_prop_avg)) %>% 
+  ggplot(aes(x = factor(1))) +
+  geom_boxplot(aes(y = eligible_prop_avg, ymax = eligible_prop_max)) 
+
+acs_mv %>% 
+  summarize(
+    total_hh = sum(total_hh),
+    eligible_ami = sum(eligible_ami),
+    eligible_ami_prop =
+      eligible_ami / total_hh,
+    eligible_units = sum(eligible_units),
+    eligible_units_prop =
+      eligible_units / total_hh,
+    eligible_prop_avg =
+      eligible_units_prop * eligible_ami_prop,
+    eligible_prop_max =
+      pmin(eligible_ami_prop, eligible_units_prop),
+    eligible_prop_min =
+      (eligible_ami_prop + eligible_units_prop - 1) %>% pmax(0)
+  ) %>% 
+  ggplot(aes(factor(1))) +
+  geom_errorbar(aes(ymin = eligible_prop_min, ymax = eligible_prop_max)) +
+  geom_point(aes(y = eligible_prop_avg), color = "red") +
+  theme(
+    axis.text.x = element_blank()
+  )
+```
+
+```{r}
+pal <- 
+  colorBin(
+    palette = "Purples", 
+    domain = acs_mv$eligible_prop_avg, 
+    bins = 5
+  )
+
+labels <- 
+  str_glue(
+    "{round(acs_mv$eligible_prop_avg, digits = 2) * 100}", 
+    "% eligible"
+    )
+
+acs_mv %>%   
+  leaflet %>%
+  addProviderTiles(providers$CartoDB.Positron) %>% 
+  addPolygons(
+    fillColor = ~ pal(eligible_prop_avg),
+    color = "white",
+    dashArray = 2,
+    fillOpacity = 0.8,
+    label = labels,
+    labelOptions = labelOptions(
+      style = list("font-weight" = "normal", padding = "3px 8px")
+      ),
+    highlight = highlightOptions(
+      weight = 3,
+      color = "#666",
+      dashArray = "",
+      fillOpacity = 0.7,
+      bringToFront = TRUE
+    )
+  )
+```
+
+Notes:
+* Avg renter household size in Mt View = 2.3 (ACS 2017 5y)
+* 120% AMI, 2 person household (2018) = $120,180
+  * rounded to $100k
+* more than 2 units (excluding mobilehomes and condos)
+  * rounded to 1 unit; condos = ?
+
+
+* 'B25127_045' - Estimate Total Renter occupied	
+* 'B25127_046' - Built 2010 or later	
+* 'B25127_047' - Built 2010 or later 1, detached or attached	
+* 'B25127_048' - Built 2010 or later 2 to 4	
+* 'B25127_049' - Built 2010 or later 5 to 19
+* 'B25127_050' - Built 2010 or later 20 to 49	
+* 'B25127_051' - Built 2010 or later 50 or more	
+* 'B25127_052' - Built 2010 or later Mobile home, boat, RV, van, etc.	
+* 'B25127_053' - Built 2000 to 2009	
+* 'B25127_054' - Built 2000 to 2009 1, detached or attached	
+* 'B25127_055' - Built 2000 to 2009 2 to 4	
+* 'B25127_056' - Built 2000 to 2009 5 to 19	
+* 'B25127_057' - Built 2000 to 2009 20 to 49	
+* 'B25127_058' - Built 2000 to 2009 50 or more	
+* 'B25127_059' - Built 2000 to 2009 Mobile home, boat, RV, van, etc.
+* 'B25127_060' - Built 1980 to 1999	
+* 'B25127_061' - Built 1980 to 1999 1, detached or attached	
+* 'B25127_062' - Built 1980 to 1999 2 to 4	
+* 'B25127_063' - Built 1980 to 1999 5 to 19	
+* 'B25127_064' - Built 1980 to 1999 20 to 49	
+* 'B25127_065' - Built 1980 to 1999 50 or more	
+* 'B25127_066' - Built 1980 to 1999 Mobile home, boat, RV, van, etc.	
+* 'B25127_067' - Built 1960 to 1979	
+* 'B25127_068' - Built 1960 to 1979 1, detached or attached	
+* 'B25127_069' - Built 1960 to 1979 2 to 4
+* 'B25127_070' - Built 1960 to 1979 5 to 19	
+* 'B25127_071' - Built 1960 to 1979 20 to 49	
+* 'B25127_072' - Built 1960 to 1979 50 or more	
+* 'B25127_073' - Built 1960 to 1979 Mobile home, boat, RV, van, etc.	
+* 'B25127_074' - Built 1940 to 1959	
+* 'B25127_075' - Built 1940 to 1959 1, detached or attached	
+* 'B25127_076' - Built 1940 to 1959 2 to 4	
+* 'B25127_077' - Built 1940 to 1959 5 to 19	
+* 'B25127_078' - Built 1940 to 1959 20 to 49	
+* 'B25127_079' - Built 1940 to 1959 50 or more
+* 'B25127_080' - Built 1940 to 1959 Mobile home, boat, RV, van, etc.	
+* 'B25127_081' - Built 1939 or earlier	
+* 'B25127_082' - Built 1939 or earlier 1, detached or attached	
+* 'B25127_083' - Built 1939 or earlier 2 to 4	
+* 'B25127_084' - Built 1939 or earlier 5 to 19	
+* 'B25127_085' - Built 1939 or earlier 20 to 49	
+* 'B25127_086' - Built 1939 or earlier 50 or more	
+* 'B25127_087' - Built 1939 or earlier Mobile home, boat, RV, van, etc.
+
+
+* 'B25118_014' - Total Renter occupied
+* 'B25118_015' - Total Renter occupied Less than $5,000	
+* 'B25118_016' - Total Renter occupied $5,000 to $9,999	
+* 'B25118_017' - Total Renter occupied $10,000 to $14,999
+* 'B25118_018' - Total Renter occupied $15,000 to $19,999
+* 'B25118_019' - Total Renter occupied $20,000 to $24,999
+* 'B25118_020' - Total Renter occupied $25,000 to $34,999
+* 'B25118_021' - Total Renter occupied $35,000 to $49,999
+* 'B25118_022' - Total Renter occupied $50,000 to $74,999
+* 'B25118_023' - Total Renter occupied $75,000 to $99,999
+* 'B25118_024' - Total Renter occupied $100,000 to $149,999
+* 'B25118_025' - Total Renter occupied $150,000 or more

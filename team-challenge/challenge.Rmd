@@ -1,0 +1,223 @@
+---
+title: "Tenant Relocation Assistance in Redwood City, CA"
+author: "Your Name"
+date: 2019-
+output: 
+  html_document:
+    toc: true
+---
+
+```{r include = FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r message=FALSE, warning=FALSE}
+# Libraries
+library(tidyverse)
+library(readxl)
+library(sf)
+library(leaflet)
+library(leaflet.extras)
+library(dcl)
+
+# Parameters
+
+  # CoreLogic Data Dictionary
+file_data_dic <- "C:/Users/katea/GitHub/dcl-2020-01/kate/c01-own/data-raw/Bulk_Tax_Current_Layout w parcel level lat long_03102016.xlsx"
+  # CoreLogic Redwood City select data
+file_cl_rwc <- "C:/Users/katea/GitHub/dcl-2020-01/kate/c01-own/data/cl_city_redwood.rds"
+  # ACS data
+file_acs_rwc <- "C:/Users/katea/GitHub/dcl-2020-01/kate/c01-own/data/acs_rwc.rds"
+  # Redwood City boundary
+file_boundaries_rwc <- "C:/Users/katea/GitHub/dcl-2020-01/kate/c01-own/data/boundaries_city_redwood.rds"
+
+  # File for downloaded answers
+file_answers <- ""
+
+#===============================================================================
+
+# Read in answers
+if (str_length(file_answers) > 0) {
+  answers <- read_rds(file_answers) 
+}
+```
+
+## Files and Answers
+Download parameter files and answers from thie [Box folder](https://stanford.box.com/s/mqrw1a3xz08j4h6xezopfpqtcdynlrzg).
+
+## Purpose
+
+There is a tenant protection policy called *tenant relocation assistance* that is becoming increasingly popular among Bay Area cities. In short, when tenants are evicted for certain reasons, the policy requires landlords to pay 3-months rent to tenants to assist with their move. However, organizers have concerns that the policy eligibility does not cover tenants who need it most.
+
+Many tenant relocation assistance policies have *means-testing*, or proof that tenants make below a certain income threshold, and restrictions based on the number of housing units. Since census data on both renter incomes and property units is masked at the city level, we will combine income data from the ACS with property data from CoreLogic to best estimate eligibility across the city.
+
+In this challenge, we will analyze one city's tenant relocation assistance policy and determine its coverage.
+
+## Data
+
+### CoreLogic
+
+This challenge relies on 2019 tax data for Redwood City from [CoreLogic](www.corelogic.com), which has been cleaned and normalized from U.S. County Assessor offices. The property data is permitted for Stanford Users through the [library](https://searchworks.stanford.edu/view/11416021) (Read the EULA [here](https://stanford.box.com/s/gc1yb9w28buytrvq1085mdgywwamx1x0)). After I was granted authorization, I filtered the data for Redwood City by fips code, selected variables with fewer than 25% missing values, changed variable names to tidyverse format, and converted to an sf point data based on latitude/longitude. The resulting rds file is saved as `file_cl_rwc` in parameters.
+
+### ACS
+
+This challenge also uses data from the most recent American Community Survey (ACS) data (2018, 5-year estimates) to get household income data from table B25118 (Tenure by Household Income in the Past 12 Months (in 2018 Inflation-Adjusted Dollars)) at the census tract level (the smallest geography for this table). For convenience, this data has been downloaded using tidycensus, filtered for Redwood City, and uploaded as `file_acs_rwc`. This is the list of the variables:
+
+* B25118_014 - Total Renter occupied
+* B25118_015 - Total Renter occupied Less than $5,000	
+* B25118_016 - Total Renter occupied $5,000 to $9,999	
+* B25118_017 - Total Renter occupied $10,000 to $14,999
+* B25118_018 - Total Renter occupied $15,000 to $19,999
+* B25118_019 - Total Renter occupied $20,000 to $24,999
+* B25118_020 - Total Renter occupied $25,000 to $34,999
+* B25118_021 - Total Renter occupied $35,000 to $49,999
+* B25118_022 - Total Renter occupied $50,000 to $74,999
+* B25118_023 - Total Renter occupied $75,000 to $99,999
+* B25118_024 - Total Renter occupied $100,000 to $149,999
+* B25118_025 - Total Renter occupied $150,000 or more
+
+## Housing Stock
+
+__q1.1__ For `q1` we will explore the housing stock in Redwood City and estimate the proportion of *residential* properties in the city eligible for relocation assistance. Read in the data from `file_cl_rwc` and count the number of missing values for each variable. Then check the data dictionary in an Excel (.xlsx) document `file_data_dic`. Which variable is the best for filtering for residential properties?
+
+```{r}
+```
+
+
+__q1.2__ For your variable of choice, filter for residential properties and save as `q1.2`. (Exclude vacant properties.)
+
+```{r}
+
+# Print results
+if (exists("q1.2")) q1.2
+```
+
+__q1.3__ Now we will look at the types of residential properties. We will recode the values by joining in a sheet from the data dictionary. First, with `file_data_dic`, use the `readxl` package (part of the tidyverse) to read in the sheets with the documentation for your variable. Save the values as "luse_code" and the descriptions as "luse_desc". Save as `q1.3`.
+
+```{r}
+
+# Print results
+if (exists("q1.3")) q1.3
+
+# Compare result with answer
+if (exists("q1.3")) compare(answers$q1.3, q1.3)
+```
+
+__q1.4__ Now join the data with your tibble of residential properties from `q1.2`. With this universe of residential properties in Redwood City, count the land uses and arrange descending. Save as `q1.4`. What can we say about the housing stock in Redwood City?
+
+```{r}
+
+# Print results
+if (exists("q1.4")) q1.4
+```
+
+
+__q1.5__ Redwood City's tenant relocation assistance policy restricts which rental units are eligible for assistance. On the city's [renter protections webpage](https://www.redwoodcity.org/departments/community-development-department/planning-housing/renter-protections) under "Relocation Assistance Highlights" it says:
+
+> Rental units not included in the City's ordinance include a room or any portion of a residential unit which is occupied by the landlord, a mobile home, *properties of four or fewer dwelling units* located on one lot, including single-family, duplex, tri-plex, or four-plex homes and accessory dwellings, mobile homes or housing accommodation in hotels, motels, etc. 
+
+Based on these criteria, best estimate the proportion of properties that are eligible for tenant relocation assistance. Add another variable to `q1.2` called `eligible_units` and select `unformatted_apn`, `land_use` and `geometry`. Save as `q1.5`. We will come back to this data in `q3`.
+
+```{r}
+
+# Print results
+if (exists("q1.5")) q1.5
+
+# Compare result with answer
+if (exists("q1.5")) compare(answers$q1.5, q1.5)
+```
+
+## Household Incomes
+
+__q2__ For a more accurate depiction of eligiblity, we should analyze the incomes at the threshold determined by Redwood City's relocation assistance policy. As stated on the website:
+
+> Eligible residential households include a displaced residential household whose annual income **does not exceed eighty percent of the area median household income** for San Mateo County as adjusted for household size according to the United States Department of Housing and Urban Development and whose rental payments to the landlord remain current through the date of displacement. [^1]
+
+The city's area median household income (AMI) limits can be found [here](https://www.redwoodcity.org/home/showdocument?id=16686) as well as on the U.S. HUD website. AMI limits are determined by both income and household size. 
+
+The average household size in Redwood City (according to ACS 2018 5-year data) was 2.8 persons. For the purposes of this EDA analysis, we will generalize to a household size of 3 across the entire city, meaning 80% AMI is $105,700.
+
+The ACS does not have household incomes with such precision, but we will generalize 80% AMI to \$100,000 and use this as our threshold. Using `file_acs_rwc` Create a new variable `eligible_ami` that counts the number of households making below \$100,000 and a new variable `eligible_ami_prop` for the proportion of eligibility.
+
+
+```{r, eval = FALSE}
+acs_rwc <- 
+  file_acs_rwc %>%
+  read_rds() %>% 
+  select(-geometry) %>% 
+  transmute(
+    GEOID,
+    total_hh = B25118_014,
+    eligible_ami =
+      pmap_dbl(
+        list(
+          B25118_015, 
+          B25118_016, 
+          B25118_017,
+          B25118_018, 
+          B25118_019, 
+          B25118_020,
+          B25118_021, 
+          B25118_022, 
+          B25118_023
+        ),
+        ~ sum(c(...))),
+    eligible_ami_prop =
+      eligible_ami / `B25118_014`
+  )
+
+acs_rwc
+```
+
+Based on AMI calculations above, determine the percentage of properties that are eligible for tenant relocation assistance. 
+
+```{r}
+
+# Print results
+if (exists("q2.1")) q2.1
+
+# Compare result with answer
+if (exists("q2.1")) compare(answers$q2.1, q2.1)
+```
+
+## Eligibility
+
+### Housing Stock by Census Tract
+
+Here we spatially join the data from `q1.5` to `acs_rwc` by the number of properties that fall within a census tract. Then we create a new variable `eligible_units_tract` that counts the number of eligible units in each block group.
+
+```{r, eval = FALSE}
+cl_acs_rwc <- 
+  acs_rwc %>% 
+  mutate(
+    eligible_units_tract = 
+      map_int(
+        st_intersects(
+          ., 
+          q1.5 %>% 
+            filter(eligible_units == "eligible")
+        ), 
+        length
+      ),
+    total_units = 
+      map_int(
+        st_intersects(., q1.5), 
+        length
+      ),
+    eligible_units_prop = 
+      eligible_units_tract / total_units 
+  ) %>% 
+  filter(!is.nan(eligible_units_prop)) %>% 
+  st_transform(crs = 4326)
+
+cl_acs_rwc
+```
+
+### Leaflet
+
+__q3__ Make two chloropleth maps of the `eligible_units_prop` and `eligible_ami_prop` using `cl_acs_rwc`. Use the polygons in Leaflet (read more [here](https://rstudio.github.io/leaflet/choropleths.html)). Compare the maps. How do the geographies of eligibility compare? What does this say about the coverage of this policy?
+
+```{r}
+```
+
+

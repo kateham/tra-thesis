@@ -1,0 +1,252 @@
+---
+title: "ACS TRA Policy Mapping"
+author: "Kate Ham"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    toc: true
+---
+
+## Introduction
+
+This report examines the eligibility requirements of 14 municipal tenant relocation assistance (TRA) policies in the San Francisco Bay Area. Tenant advocates have concerns that the TRA policies do not have significant coverage. In this report, I examine two main eligibility requirements: units and percentage of area median income (AMI).
+
+The units requirement generally exempts smaller homes, such as single-family residences and duplexes. The AMI percentage requirement, also known as *means-testing* in essence determines which households are "poor enough" to qualify for TRA.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r message=FALSE, warning=FALSE}
+# Libraries
+library(tidyverse)
+library(readxl)
+library(sf)
+library(leaflet)
+library(leaflet.extras)
+
+# Parameters
+cities <- 
+  c(
+    "alameda",
+    "san_leandro",
+    "emeryville",
+    "oakland",
+    "berkeley",
+    "san_francisco",
+    "east_palo_alto",
+    "redwood_city",
+    "menlo_park",
+    "mountain_view",
+    "palo_alto",
+    "san_jose",
+    "richmond",
+    "healdsburg"
+  )
+```
+
+## Mapping Eligibility
+
+Load in the parameters from the `data/acs_vars` folder which has various .rds files. For details and methodology, please see `acs_vars2.Rmd` in the 'reports' folder.
+
+```{r message=FALSE, warning=FALSE}
+# Parameters cont'd
+filenames <- fs::dir_ls(here::here("c01-own/data/acs_vars"))
+names <- str_match_all(filenames, "(\\w*_\\w*)\\.rds$")
+for (i in names) {
+  filepath <- file.path(here::here("c01-own/data/acs_vars"), i[1])
+  assign(i[2], read_rds(filepath))
+}
+```
+
+The following chunk outputs maps for each individual city. I create variables for each census tract with the proportion of households eligible by both AMI and units, then provide an estimate for eligibility with `eligible_prop_avg` by multiplying the proportions. Run the chunk below to create Leaflet maps for each of the 14 cities.
+
+```{r message=FALSE, warning=FALSE}
+
+find_city_eligibility <- function(city) {
+  data <- 
+    str_glue(here::here("c01-own/data/acs/acs_{city}.rds")) %>%
+    read_rds() %>%
+    transmute(
+      GEOID,
+      city = {{city}},
+      total_hh = B25118_014,
+      eligible_ami =
+        pmap_dbl(
+          select_at(st_drop_geometry(.), recode_ami(ami_acs = ami_acs, city = {{city}})),
+          ~ sum(c(...))),
+      eligible_ami_prop =
+        eligible_ami / total_hh,
+      eligible_units =
+        pmap_dbl(
+          select_at(st_drop_geometry(.), recode_units(city = {{city}})),
+          ~ sum(c(...))),
+      eligible_units_prop =
+        eligible_units / total_hh,
+      eligible_prop_avg =
+        eligible_units_prop * eligible_ami_prop,
+      eligible_prop_max =
+        pmin(eligible_ami_prop, eligible_units_prop),
+      eligible_prop_min =
+        (eligible_ami_prop + eligible_units_prop - 1) %>% pmax(0)
+    ) 
+  
+  assign(city, data, envir = .GlobalEnv)
+  
+  pal <- 
+    colorBin(
+      palette = "Purples", 
+      domain = data$eligible_prop_avg, 
+      bins = 5
+    )
+  
+  labels <- 
+    str_glue(
+      "{round(data$eligible_prop_avg, digits = 2) * 100}", 
+      "% eligible"
+    )
+  
+  data %>%   
+    st_transform(crs = "+proj=longlat +datum=WGS84") %>% 
+    leaflet %>%
+    addProviderTiles(providers$CartoDB.Positron) %>% 
+    addPolygons(
+      fillColor = ~ pal(eligible_prop_avg),
+      color = "white",
+      dashArray = 2,
+      fillOpacity = 0.8,
+      label = labels,
+      labelOptions = labelOptions(
+        style = list("font-weight" = "normal", padding = "3px 8px")
+      ),
+      highlight = highlightOptions(
+        weight = 3,
+        color = "#666",
+        dashArray = "",
+        fillOpacity = 0.7,
+        bringToFront = TRUE
+      )
+    ) %>% 
+    addLegend(
+      pal = pal, 
+      values = ~ eligible_prop_avg, 
+      opacity = 0.7, 
+      title = "Proportion Eligible",
+      labFormat = labelFormat(suffix = "%", transform = function(x) 100 * x),
+      position = "bottomright"
+    ) %>% 
+    addControl(
+      html = data$city[1] %>% str_replace("_", " ") %>% str_to_title(),
+      position = "topleft"
+    )
+}
+
+#===============================================================================
+
+map(cities, find_city_eligibility)
+```
+
+The following chunk adds all the cities to one tibble.
+
+```{r}
+# can't use bind_rows() to preserve geometry
+cities_all <- 
+  rbind(
+    alameda,
+    san_leandro,
+    emeryville,
+    oakland,
+    berkeley,
+    san_francisco,
+    east_palo_alto,
+    redwood_city,
+    menlo_park,
+    mountain_view,
+    palo_alto,
+    san_jose,
+    richmond,
+    healdsburg
+  ) %>% 
+  st_transform(crs = "+proj=longlat +datum=WGS84")
+
+```
+
+The following is a plot of the error in the `eligible_prop_avg` measure since it used an average of the two proportions. Using `eligible_prop_min` and `eligible_prop_max` the following EDA plot displays the range of error for the eligibilities.
+
+```{r}
+cities_all %>% 
+  group_by(city) %>% 
+  summarize(
+    total_hh = sum(total_hh),
+    eligible_ami = sum(eligible_ami),
+    eligible_ami_prop =
+      eligible_ami / total_hh,
+    eligible_units = sum(eligible_units),
+    eligible_units_prop =
+      eligible_units / total_hh,
+    eligible_prop_avg =
+      eligible_units_prop * eligible_ami_prop,
+    eligible_prop_max =
+      pmin(eligible_ami_prop, eligible_units_prop),
+    eligible_prop_min =
+      (eligible_ami_prop + eligible_units_prop - 1) %>% pmax(0)
+  ) %>% 
+  ggplot(aes(fct_reorder(city, eligible_prop_avg))) +
+  geom_errorbar(aes(ymin = eligible_prop_min, ymax = eligible_prop_max)) +
+  geom_point(aes(y = eligible_prop_avg), color = "red") +
+  coord_flip()
+
+```
+
+The following plot is a combined Leaflet map of all selected cities.
+
+```{r}
+pal <- 
+  colorBin(
+    palette = "Reds", 
+    domain = cities_all$eligible_prop_avg, 
+    bins = 5
+  )
+
+labels <- 
+  str_glue(
+    "{round(cities_all$eligible_prop_avg, digits = 2) * 100}", 
+    "% eligible"
+  )
+
+cities_all %>%   
+  leaflet %>%
+  addProviderTiles(providers$CartoDB.Positron) %>% 
+  addPolygons(
+    fillColor = ~ pal(eligible_prop_avg),
+    weight = 1,
+    color = "white",
+    dashArray = 2,
+    fillOpacity = 0.8,
+    label = labels,
+    labelOptions = labelOptions(
+      style = list("font-weight" = "normal", padding = "3px 8px")
+    ),
+    highlight = highlightOptions(
+      weight = 3,
+      color = "#666",
+      dashArray = "",
+      fillOpacity = 0.7,
+      bringToFront = TRUE
+    )
+  ) %>% 
+  addLegend(
+    pal = pal, 
+    values = ~ eligible_prop_avg, 
+    opacity = 0.7, 
+    title = "Proportion Eligible",
+    labFormat = labelFormat(suffix = "%", transform = function(x) 100 * x),
+    position = "bottomright"
+  )
+```
+
+## Conclusions
+
+The above maps estimates the proportion of Bay Area renters eligible for tenant relocation assistance upon eviction in select cities. From this we can see that the TRA policies have both relatively and absolutely poorer coverage in South Bay cities. This is likely due to the higher composition of smaller homes in the South Bay, leading to a greater influence of real estate interests on tenant protection policies. 
+
+Because these graphs only offer two factors of eligibility, we can consider them a maximum estimate. More realistically, eligiblity proportions are significantly lower. For example, the greatest restriction to TRA eligiblity is eviction cause, which limits evictions to no-fault formal evictions and disregards at-fault evictions and informal evictions - both of which are more prevalent according to prior research. However, comprehensive eviction data is not currently available for all the 14 cities and therefore could not be included in this report.
