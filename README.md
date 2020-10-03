@@ -5,7 +5,7 @@ Final Files:
 * [acs_all.R](scripts/acs_all.R): Script for downloading ACS data for Bay Area cities by tract
 * [boundaries_city.R](scripts/boundaries_city.R): Script for downloading select city boundaries
 * [acs_vars2.md](reports/acs_vars2.md): Methodology for selecting ACS variables in "acs_mapping2.md"
-* [acs_mapping2.Rmd](reports/acs_mapping2.md): Mapping eligibility of tenant relocation assistance (TRA) policies in the Bay Area with ACS data
+* [acs_mapping2.Rmd](reports/acs_mapping2.html): Mapping eligibility of tenant relocation assistance (TRA) policies in the Bay Area with ACS data
 * [avalon.md](reports/avalon.md): Finding corporate shell companies for Avalon properties
 
 Besides the data files, everything else is unrelated and should be in the "OLD" folders.
