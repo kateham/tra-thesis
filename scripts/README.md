@@ -1,23 +1,4 @@
 # Scripts
 
-# cl_filter.R
-# Takes corelogic_tax_bayarea.rds located in Kate's personal AFS folder
-# and filters it into smaller rds files for each of the Bay Area's 9 counties.
-
-# boundaries_city.R
-# Gets selected group of city boundaries using tigris package.
-
-# boundaries_cbg.R
-# Gets all census block groups from 9 Bay Area counties using tigris package.
-
-# boundaries_cbg_city_redwood.R
-# Spatially estimates which block groups are within municipal boundaries. Currently
-# only reproducible for Redwood City.
-
-# cl_city_redwood.R
-# Filters for Redwood City Corelogic data using spatial filter (st_within) on
-# county Corelogic data and city boundaries.
-
-# acs_rwc.R
-# Downloads ACS 2018 5-year Household Income Data for Redwood City. Currently
-# only functions for Redwood City. Smallest geography level is block groups.
+* [boundaries_city.R](scripts/boundaries_city.R) - Gets select city boundaries using tigris package.
+* [acs_all.R](scripts/acs_all.R) - Downloads ACS 2018 5-year data for select Bay Area cities by tract using renter household income data, number of rental units data, and spatial filtering with the municipal boundaries downloaded in "boundaries_city.R".
