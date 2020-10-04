@@ -19,5 +19,3 @@ Folders:
 * [reports](reports): Project proposals, progress reports, and final report
 * [scripts](scripts): Scripts to process data
 * [team-challenge](team-challenge): Challenge for teammates
-
-*Note: File paths may not be updated.*
